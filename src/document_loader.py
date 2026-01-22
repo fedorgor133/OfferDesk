@@ -8,6 +8,7 @@ from typing import List
 import pandas as pd
 from langchain.schema import Document
 from langchain_community.document_loaders import PyPDFLoader
+from .conversation_splitter import ConversationSplitter
 
 
 class DocumentLoader:
@@ -16,11 +17,21 @@ class DocumentLoader:
     def __init__(self, upload_dir: str = "./data/uploads"):
         self.upload_dir = Path(upload_dir)
         self.upload_dir.mkdir(parents=True, exist_ok=True)
+        self.conversation_splitter = ConversationSplitter()
     
-    def load_pdf(self, file_path: str, conversation_id: str = None) -> List[Document]:
+    def load_pdf(self, file_path: str, conversation_id: str = None, split_conversations: bool = False) -> List[Document]:
         #Load PDF file and return as langchain documents
         loader = PyPDFLoader(file_path)
         documents = loader.load()
+        
+        # If split_conversations is True, split the document by conversation sections
+        if split_conversations:
+            # Combine all pages into one text
+            full_text = "\n\n".join([doc.page_content for doc in documents])
+            
+            print(f"📄 Splitting {Path(file_path).name} into conversations...")
+            split_docs = self.conversation_splitter.split_by_conversations(full_text, file_path)
+            return split_docs
         
         # Add conversation ID to metadata if provided
         if conversation_id:
@@ -53,7 +64,7 @@ class DocumentLoader:
         
         return documents
     
-    def load_directory(self, directory: str = None) -> List[Document]:
+    def load_directory(self, directory: str = None, split_conversations: bool = False) -> List[Document]:
         #Load all PDF and CSV files from a directory
         if directory is None:
             directory = str(self.upload_dir)
@@ -67,11 +78,19 @@ class DocumentLoader:
         # Load PDFs
         for pdf_file in data_dir.glob("*.pdf"):
             try:
-                # Extract conversation ID from filename (e.g., conversation_1.pdf -> 1)
-                conv_id = self._extract_conversation_id(pdf_file.name)
-                docs = self.load_pdf(str(pdf_file), conversation_id=conv_id)
-                all_documents.extend(docs)
-                print(f"✓ Loaded {len(docs)} pages from {pdf_file.name} (Conversation: {conv_id or 'None'})")
+                # Check if filename indicates it should be split by conversations
+                should_split = split_conversations or 'all' in pdf_file.name.lower() or 'combined' in pdf_file.name.lower()
+                
+                if should_split:
+                    docs = self.load_pdf(str(pdf_file), split_conversations=True)
+                    all_documents.extend(docs)
+                    print(f"✓ Loaded {pdf_file.name} - split into {len(docs)} conversation chunks")
+                else:
+                    # Extract conversation ID from filename (e.g., conversation_1.pdf -> 1)
+                    conv_id = self._extract_conversation_id(pdf_file.name)
+                    docs = self.load_pdf(str(pdf_file), conversation_id=conv_id)
+                    all_documents.extend(docs)
+                    print(f"✓ Loaded {len(docs)} pages from {pdf_file.name} (Conversation: {conv_id or 'None'})")
             except Exception as e:
                 print(f"✗ Error loading PDF {pdf_file.name}: {str(e)}")
         

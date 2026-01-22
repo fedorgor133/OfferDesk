@@ -49,14 +49,36 @@ Answer: """
             input_variables=["context", "question"]
         )
     
-    def load_documents(self, directory: str = None) -> None:
-        """Load documents from directory"""
+    def load_documents(self, directory: str = None, split_conversations: bool = False) -> None:
+        """Load documents from directory
+        
+        Args:
+            directory: Directory to load from
+            split_conversations: If True, will split documents by "Conversation N" headers
+        """
         print("\n📚 Loading documents...")
-        documents = self.document_loader.load_directory(directory)
+        documents = self.document_loader.load_directory(directory, split_conversations=split_conversations)
         
         if documents:
             self.vector_store_manager.add_documents(documents)
             print(f"✓ Total documents loaded: {len(documents)}")
+            
+            # Auto-register conversations with the router
+            if self.router and split_conversations:
+                print("\n🔍 Auto-detecting conversations...")
+                conversation_samples = {}
+                
+                # Collect samples for each conversation
+                for doc in documents:
+                    conv_id = doc.metadata.get('conversation_id')
+                    if conv_id and conv_id not in conversation_samples:
+                        conversation_samples[conv_id] = doc.page_content
+                
+                # Register each conversation
+                for conv_id, sample in conversation_samples.items():
+                    self.router.register_conversation_from_document(conv_id, sample)
+                
+                print(f"✓ Found {len(conversation_samples)} conversations in document")
         else:
             print("⚠ No documents found to load")
     
