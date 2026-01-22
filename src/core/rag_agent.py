@@ -120,36 +120,62 @@ Answer: """
         # This helps when the question matches the Deal Context more closely
         if relevant_docs:
             # Score documents based on keyword overlap in question
-            def score_relevance(doc, question_terms):
+            def score_relevance(doc, question_terms, question_lower):
                 content = doc.page_content.lower()
-                question_lower = question.lower()
                 
-                # Boost score if "Deal Context" is mentioned and question keywords appear there
                 score = 0
+                
+                # Extract Deal Context section
+                deal_context_section = ""
                 if "deal context:" in content:
-                    deal_context_section = content.split("outcome:")[0] if "outcome:" in content else content
+                    parts = content.split("outcome:")
+                    deal_context_section = parts[0].lower()
+                
+                # HIGHEST WEIGHT: Check for exact phrase matches in Deal Context
+                # Look for multi-word phrases from the question
+                if deal_context_section:
+                    # Check for 2-3 word phrases
+                    words = question_lower.split()
+                    for i in range(len(words) - 2):
+                        phrase = " ".join(words[i:i+3])
+                        if phrase in deal_context_section:
+                            score += 10  # Very high weight for exact phrases
+                    
+                    # Check for specific keywords with higher weight in Deal Context
+                    important_keywords = ["3-year", "4th year", "cpi", "commitment approved", 
+                                         "clause", "renewal", "linking", "fixed percentage"]
+                    for keyword in important_keywords:
+                        if keyword in deal_context_section:
+                            score += 5
+                
+                # MEDIUM WEIGHT: Individual term matching in Deal Context
+                if deal_context_section:
                     for term in question_terms:
                         if term in deal_context_section:
-                            score += 2  # Higher weight for Deal Context matches
+                            score += 2
                 
-                # Also check outcome section
+                # LOW WEIGHT: Outcome section matching
                 if "outcome:" in content:
-                    outcome_section = content.split("outcome:")[1] if "outcome:" in content else ""
+                    outcome_section = content.split("outcome:")[1]
                     for term in question_terms:
                         if term in outcome_section:
                             score += 1
                 
-                # Exact phrase matching
-                if question_lower in content:
-                    score += 5
+                # BONUS: If both Deal Context and Outcome match multiple terms
+                if deal_context_section and "outcome:" in content:
+                    outcome_section = content.split("outcome:")[1]
+                    matching_in_both = sum(1 for t in question_terms if t in deal_context_section and t in outcome_section)
+                    if matching_in_both > 0:
+                        score += matching_in_both * 3
                 
                 return score
             
             # Get important terms from question
             question_terms = [t.lower() for t in question.split() if len(t) > 3]
+            question_lower = question.lower()
             
             # Score all documents
-            scored_docs = [(doc, score_relevance(doc, question_terms)) for doc in relevant_docs]
+            scored_docs = [(doc, score_relevance(doc, question_terms, question_lower)) for doc in relevant_docs]
             
             # Sort by score (descending) but keep original position as tiebreaker
             scored_docs.sort(key=lambda x: (-x[1], relevant_docs.index(x[0])))
