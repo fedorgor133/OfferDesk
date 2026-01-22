@@ -131,9 +131,21 @@ Answer: """
                     parts = content.split("outcome:")
                     deal_context_section = parts[0].lower()
                 
+                # PRIMARY DEAL CONTEXT KEYWORDS (highest priority - must come from Deal Context line)
+                # These describe the actual deal being discussed
+                primary_keywords = ["3-year commitment", "4th year", "cpi", "linking renewal", 
+                                   "fixed percentage", "andorra telecom", "client requested clause"]
+                primary_score = 0
+                if deal_context_section:
+                    for keyword in primary_keywords:
+                        if keyword in deal_context_section:
+                            primary_score += 20  # VERY HIGH weight for primary context
+                
+                score += primary_score
+                
                 # HIGHEST WEIGHT: Check for exact phrase matches in Deal Context
                 # Look for multi-word phrases from the question
-                if deal_context_section:
+                if deal_context_section and primary_score == 0:  # Only if primary keywords didn't match
                     # Check for 2-3 word phrases
                     words = question_lower.split()
                     for i in range(len(words) - 2):
@@ -141,21 +153,21 @@ Answer: """
                         if phrase in deal_context_section:
                             score += 10  # Very high weight for exact phrases
                     
-                    # Check for specific keywords with higher weight in Deal Context
-                    important_keywords = ["3-year", "4th year", "cpi", "commitment approved", 
-                                         "clause", "renewal", "linking", "fixed percentage"]
-                    for keyword in important_keywords:
+                    # Check for secondary keywords with higher weight in Deal Context
+                    secondary_keywords = ["clause", "renewal", "commitment", "discount", "employee count",
+                                         "price stability", "pricing", "contract"]
+                    for keyword in secondary_keywords:
                         if keyword in deal_context_section:
-                            score += 5
+                            score += 3
                 
-                # MEDIUM WEIGHT: Individual term matching in Deal Context
-                if deal_context_section:
+                # MEDIUM WEIGHT: Individual term matching in Deal Context (only if primary didn't match much)
+                if deal_context_section and primary_score < 20:
                     for term in question_terms:
-                        if term in deal_context_section:
+                        if term in deal_context_section and len(term) > 4:
                             score += 2
                 
-                # LOW WEIGHT: Outcome section matching
-                if "outcome:" in content:
+                # LOW WEIGHT: Outcome section matching (deprioritize outcomes when Deal Context matches)
+                if "outcome:" in content and primary_score == 0:  # Only if no primary match
                     outcome_section = content.split("outcome:")[1]
                     for term in question_terms:
                         if term in outcome_section:
@@ -214,10 +226,16 @@ Answer: """
             for doc in relevant_docs
         ]
         
+        # Extract conversation_id from the first source if not already set
+        final_conv_id = selected_conv_id
+        if not final_conv_id and sources:
+            conv_id = sources[0].get("conversation_id", "N/A")
+            final_conv_id = int(conv_id) if conv_id != "N/A" and conv_id else None
+        
         return {
             "answer": answer,
             "sources": sources,
-            "conversation_id": selected_conv_id
+            "conversation_id": final_conv_id
         }
     
     def clear_database(self) -> None:
