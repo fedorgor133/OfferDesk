@@ -1,17 +1,21 @@
-"""Main RAG Agent implementation"""
+"""
+Main RAG Agent implementation
+"""
 
-from typing import List
+from typing import List, Optional
 from langchain_openai import ChatOpenAI
 from langchain.prompts import PromptTemplate
 from langchain.chains import RetrievalQA
 from .document_loader import DocumentLoader
 from .vector_store import VectorStoreManager
+from .conversation_router import ConversationRouter
 
 
 class RAGAgent:
-    """Retrieval Augmented Generation Agent"""
+    #Retrieval Augmented Generation Agent
     
-    def __init__(self, openai_api_key: str = None, db_path: str = "./data/db/chroma"):
+    def __init__(self, openai_api_key: str = None, db_path: str = "./data/db/chroma", 
+                 use_conversation_routing: bool = True):
         self.llm = ChatOpenAI(
             api_key=openai_api_key,
             model="gpt-3.5-turbo",
@@ -22,6 +26,10 @@ class RAGAgent:
         self.document_loader = DocumentLoader()
         self.qa_chain = None
         self.custom_prompt = self._create_prompt()
+        
+        # Initialize conversation router
+        self.use_routing = use_conversation_routing
+        self.router = ConversationRouter(openai_api_key=openai_api_key) if use_conversation_routing else None
     
     def _create_prompt(self) -> PromptTemplate:
         """Create custom prompt for the agent"""
@@ -72,30 +80,70 @@ Answer: """
         )
         print("✓ RAG Agent initialized and ready to answer questions")
     
-    def query(self, question: str) -> dict:
-        """Ask a question and get an answer based on loaded documents"""
-        if self.qa_chain is None:
+    def query(self, question: str, conversation_id: Optional[str] = None) -> dict:
+        """Ask a question and get an answer based on loaded documents
+        
+        Args:
+            question: The question to ask
+            conversation_id: Optional conversation ID to filter by. If None and routing is enabled,
+                           will auto-detect the best conversation.
+        """
+        if self.vector_store_manager.vector_store is None:
             return {
                 "answer": "Agent not initialized. Please load documents and call initialize() first.",
-                "sources": []
+                "sources": [],
+                "conversation_id": None
             }
         
-        result = self.qa_chain({"query": question})
+        # Determine which conversation to use
+        selected_conv_id = conversation_id
+        if selected_conv_id is None and self.use_routing and self.router:
+            selected_conv_id = self.router.route_query(question, use_ai=True)
         
-        sources = []
-        if "source_documents" in result:
-            sources = [
-                {
-                    "content": doc.page_content[:200],
-                    "source": doc.metadata.get("source", "Unknown"),
-                    "page": doc.metadata.get("page", "N/A")
-                }
-                for doc in result["source_documents"]
-            ]
+        # Search with conversation filter
+        if selected_conv_id:
+            print(f"🔍 Searching in Conversation {selected_conv_id} only...")
+            relevant_docs = self.vector_store_manager.search(
+                question, 
+                k=5, 
+                filter_metadata={'conversation_id': selected_conv_id}
+            )
+        else:
+            print("🔍 Searching across all conversations...")
+            relevant_docs = self.vector_store_manager.search(question, k=5)
+        
+        if not relevant_docs:
+            return {
+                "answer": "No relevant documents found for your query.",
+                "sources": [],
+                "conversation_id": selected_conv_id
+            }
+        
+        # Build context from retrieved documents
+        context = "\n\n".join([doc.page_content for doc in relevant_docs])
+        
+        # Create prompt with context
+        prompt_text = self.custom_prompt.format(context=context, question=question)
+        
+        # Get answer from LLM
+        response = self.llm.invoke(prompt_text)
+        answer = response.content
+        
+        # Format sources
+        sources = [
+            {
+                "content": doc.page_content[:200],
+                "source": doc.metadata.get("source", "Unknown"),
+                "page": doc.metadata.get("page", "N/A"),
+                "conversation_id": doc.metadata.get("conversation_id", "N/A")
+            }
+            for doc in relevant_docs
+        ]
         
         return {
-            "answer": result["result"],
-            "sources": sources
+            "answer": answer,
+            "sources": sources,
+            "conversation_id": selected_conv_id
         }
     
     def clear_database(self) -> None:

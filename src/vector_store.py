@@ -1,4 +1,6 @@
-"""Vector store management using ChromaDB"""
+"""
+Vector store management using ChromaDB
+"""
 
 import os
 from typing import List
@@ -53,12 +55,26 @@ class VectorStoreManager:
             print(f"Note: Could not load existing vector store: {str(e)}")
             self.vector_store = None
     
-    def search(self, query: str, k: int = 5) -> List[Document]:
-        """Search vector store for relevant documents"""
+    def search(self, query: str, k: int = 5, filter_metadata: dict = None) -> List[Document]:
+        """Search vector store for relevant documents
+        
+        Args:
+            query: Search query
+            k: Number of results to return
+            filter_metadata: Dictionary to filter by metadata (e.g., {'conversation_id': '1'})
+        """
         if self.vector_store is None:
             return []
         
-        results = self.vector_store.similarity_search(query, k=k)
+        if filter_metadata:
+            results = self.vector_store.similarity_search(
+                query, 
+                k=k,
+                filter=filter_metadata
+            )
+        else:
+            results = self.vector_store.similarity_search(query, k=k)
+        
         return results
     
     def clear(self) -> None:
