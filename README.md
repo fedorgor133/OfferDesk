@@ -1,31 +1,53 @@
-# RAG Agent - AI Document Analysis
+# OfferDesk - RAG Agent for Sales Conversations
 
-A simple but powerful Retrieval Augmented Generation (RAG) agent built with LangChain and OpenAI. This agent can analyze PDF and CSV files, create relationships between data, and answer questions based on the uploaded documents.
+A simple, offline-first RAG (Retrieval Augmented Generation) agent that answers questions based on your conversation documents. **No API calls needed** - works entirely with your provided data.
 
 ## Features
 
-- 📄 **PDF Support**: Load and process PDF documents
-- 📊 **CSV Support**: Import and analyze CSV data
-- 🤖 **AI-Powered**: Uses OpenAI's GPT models for intelligent responses
-- 🔍 **Vector Search**: ChromaDB for efficient document retrieval
-- 🔗 **Relationship Analysis**: Automatically creates connections between data points
-- 📝 **Source Attribution**: Every answer includes relevant source documents
+✅ **Offline Mode** - No internet required, no API quota issues  
+✅ **Single Document** - Put all conversations in one file  
+✅ **Auto-Detection** - Automatically finds "Conversation N" sections  
+✅ **Keyword Search** - Simple, fast document retrieval  
+✅ **Local Storage** - Vector database persists on your machine  
 
-## Setup
+## Quick Start
 
-### 1. Configure Python Environment
-
-The project uses a virtual environment located at `/Users/fedor.gorshkov/pyenvs/rag-agent/venv`
-
-Activate it:
 ```bash
+# Activate environment
 source /Users/fedor.gorshkov/pyenvs/rag-agent/venv/bin/activate
+
+# Run test
+python test_offline_mode.py
+
+# Or use the example
+python example_single_document.py
 ```
 
-### 2. Install Dependencies
+## Project Structure
 
-```bash
-pip install -r requirements.txt
+```
+OfferDesk/
+├── src/
+│   ├── core/                    # Core RAG functionality
+│   │   ├── rag_agent.py         # Main RAG agent class
+│   │   └── vector_store.py      # Vector store management
+│   │
+│   └── processing/              # Document processing
+│       ├── document_loader.py   # Load PDF, CSV, TXT files
+│       └── conversation_splitter.py # Split docs into conversations
+│
+├── config/
+│   └── .env                     # Your API keys (optional)
+│
+├── data/
+│   ├── uploads/                 # Your document files
+│   ├── db/                      # Vector store database
+│   └── embeddings_cache/        # Cached embeddings
+│
+├── example_single_document.py   # Main usage example
+├── test_offline_mode.py         # Test without API
+├── requirements.txt             # Python packages
+└── README.md
 ```
 
 ### 3. Configure API Key
