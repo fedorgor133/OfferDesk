@@ -20,50 +20,44 @@ class ConversationSplitter:
         """Split document into conversation sections
         
         Expects format like:
-        Conversation 1
-        Deal Size: < €1k
-        Stage: Early
-        ...content...
-        
         Conversation 2
-        Deal Size: ~€2k
-        ...content...
+        Deal Context: ...text...
         
-        OR with (Refined) suffix:
-        Conversation 1 (Refined)
-        ...content...
+        Outcome: ...text...
+        
+        Conversation 3
+        Deal Context: ...text...
         """
         documents = []
         
-        # Find all conversation headers - matches "Conversation N" or "Conversation N (Refined)" etc.
-        conversation_pattern = r'(?:^|\n)(?:#{1,3}\s*)?Conversation\s+(\d+)(?:\s*\([^)]*\))?\s*\n'
+        # Find all conversation headers - matches "Conversation N" or "Conversation N.1" etc.
+        conversation_pattern = r'(?:^|\n)(Conversation\s+(\d+(?:\.\d+)?))\s*\n'
         
         # Split the text by conversation headers
         parts = re.split(conversation_pattern, text, flags=re.IGNORECASE | re.MULTILINE)
         
-        # First part is before any conversation (might be intro)
-        if parts[0].strip():
-            # Intro/header section - no conversation ID
-            intro_docs = self._create_chunks(parts[0], source, None)
-            documents.extend(intro_docs)
-        
         # Process conversation sections
-        # parts will be: [intro, "1", conv1_content, "2", conv2_content, ...]
-        for i in range(1, len(parts), 2):
-            if i + 1 < len(parts):
-                conv_id = parts[i].strip()
-                conv_content = parts[i + 1].strip()
+        # parts will be: [intro, "Conversation 1", "1", conv1_content, "Conversation 2", "2", conv2_content, ...]
+        i = 1
+        while i < len(parts):
+            if i + 2 < len(parts):
+                conv_header = parts[i].strip()  # "Conversation 1"
+                conv_id = parts[i + 1].strip()  # "1"
+                conv_content = parts[i + 2].strip()  # Content
                 
                 if conv_content:
-                    # Create chunks for this conversation
-                    conv_docs = self._create_chunks(conv_content, source, conv_id)
+                    # Keep full content (Deal Context + Outcome) for better semantic matching
+                    # This helps the vector search find relevant conversations
+                    conv_docs = self._create_chunks(conv_content, source, conv_id, conv_header)
                     documents.extend(conv_docs)
                     
-                    print(f"  ✓ Found Conversation {conv_id} ({len(conv_docs)} chunks)")
+                    print(f"  ✓ Found {conv_header} ({len(conv_docs)} chunks)")
+            
+            i += 3
         
         return documents
     
-    def _create_chunks(self, content: str, source: str, conversation_id: str = None) -> List[Document]:
+    def _create_chunks(self, content: str, source: str, conversation_id: str = None, conv_header: str = None) -> List[Document]:
         """Create document chunks with metadata"""
         # Split content into chunks
         chunks = self.text_splitter.split_text(content)
@@ -78,6 +72,8 @@ class ConversationSplitter:
             
             if conversation_id:
                 metadata["conversation_id"] = conversation_id
+            if conv_header:
+                metadata["conversation_header"] = conv_header
             
             doc = Document(
                 page_content=chunk,

@@ -104,17 +104,58 @@ Answer: """
         # Determine which conversation to use (routing disabled in this version)
         selected_conv_id = conversation_id
         
-        # Search with conversation filter
+        # Search with conversation filter - get top 5 results, then pick the best
         if selected_conv_id:
             print(f"🔍 Searching in Conversation {selected_conv_id} only...")
             relevant_docs = self.vector_store_manager.search(
                 question, 
-                k=5, 
+                k=5,  # Get top 5 to rank them
                 filter_metadata={'conversation_id': selected_conv_id}
             )
         else:
             print("🔍 Searching across all conversations...")
-            relevant_docs = self.vector_store_manager.search(question, k=5)
+            relevant_docs = self.vector_store_manager.search(question, k=5)  # Get top 5 to rank them
+        
+        # Re-rank to prefer "Deal Context" matches over "Outcome" matches
+        # This helps when the question matches the Deal Context more closely
+        if relevant_docs:
+            # Score documents based on keyword overlap in question
+            def score_relevance(doc, question_terms):
+                content = doc.page_content.lower()
+                question_lower = question.lower()
+                
+                # Boost score if "Deal Context" is mentioned and question keywords appear there
+                score = 0
+                if "deal context:" in content:
+                    deal_context_section = content.split("outcome:")[0] if "outcome:" in content else content
+                    for term in question_terms:
+                        if term in deal_context_section:
+                            score += 2  # Higher weight for Deal Context matches
+                
+                # Also check outcome section
+                if "outcome:" in content:
+                    outcome_section = content.split("outcome:")[1] if "outcome:" in content else ""
+                    for term in question_terms:
+                        if term in outcome_section:
+                            score += 1
+                
+                # Exact phrase matching
+                if question_lower in content:
+                    score += 5
+                
+                return score
+            
+            # Get important terms from question
+            question_terms = [t.lower() for t in question.split() if len(t) > 3]
+            
+            # Score all documents
+            scored_docs = [(doc, score_relevance(doc, question_terms)) for doc in relevant_docs]
+            
+            # Sort by score (descending) but keep original position as tiebreaker
+            scored_docs.sort(key=lambda x: (-x[1], relevant_docs.index(x[0])))
+            
+            # Take the top result
+            relevant_docs = [scored_docs[0][0]] if scored_docs else relevant_docs[:1]
         
         if not relevant_docs:
             return {
