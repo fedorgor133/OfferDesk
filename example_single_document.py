@@ -2,7 +2,7 @@
 
 import os
 from dotenv import load_dotenv
-from src.rag_agent import RAGAgent
+from src.core.rag_agent import RAGAgent
 
 
 def main():

@@ -5,9 +5,8 @@ Main RAG Agent implementation
 from typing import List, Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import PromptTemplate
-from .document_loader import DocumentLoader
+from ..processing.document_loader import DocumentLoader
 from .vector_store import VectorStoreManager
-from .conversation_router import ConversationRouter
 
 
 class RAGAgent:
@@ -39,9 +38,9 @@ class RAGAgent:
         self.qa_chain = None
         self.custom_prompt = self._create_prompt()
         
-        # Initialize conversation router (only if not in local_mode)
-        self.use_routing = use_conversation_routing and not local_mode
-        self.router = ConversationRouter(openai_api_key=openai_api_key) if self.use_routing else None
+        # Conversation routing disabled (API mode not supported in this version)
+        self.use_routing = False
+        self.router = None
     
     def _create_prompt(self) -> PromptTemplate:
         """Create custom prompt for the agent"""
@@ -74,23 +73,6 @@ Answer: """
         if documents:
             self.vector_store_manager.add_documents(documents)
             print(f"✓ Total documents loaded: {len(documents)}")
-            
-            # Auto-register conversations with the router
-            if self.router and split_conversations:
-                print("\n🔍 Auto-detecting conversations...")
-                conversation_samples = {}
-                
-                # Collect samples for each conversation
-                for doc in documents:
-                    conv_id = doc.metadata.get('conversation_id')
-                    if conv_id and conv_id not in conversation_samples:
-                        conversation_samples[conv_id] = doc.page_content
-                
-                # Register each conversation
-                for conv_id, sample in conversation_samples.items():
-                    self.router.register_conversation_from_document(conv_id, sample)
-                
-                print(f"✓ Found {len(conversation_samples)} conversations in document")
         else:
             print("⚠ No documents found to load")
     
@@ -119,10 +101,8 @@ Answer: """
                 "conversation_id": None
             }
         
-        # Determine which conversation to use
+        # Determine which conversation to use (routing disabled in this version)
         selected_conv_id = conversation_id
-        if selected_conv_id is None and self.use_routing and self.router:
-            selected_conv_id = self.router.route_query(question, use_ai=True)
         
         # Search with conversation filter
         if selected_conv_id:

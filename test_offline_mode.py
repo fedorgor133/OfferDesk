@@ -4,8 +4,7 @@ Test RAG Agent in LOCAL MODE - OFFLINE VERSION
 NO downloads, NO API calls, just keyword matching from your documents.
 """
 
-from src.document_loader import DocumentLoader
-from src.conversation_splitter import ConversationSplitter
+from src.processing.document_loader import DocumentLoader
 import re
 
 print("=" * 70)
