@@ -2,8 +2,8 @@
 
 import re
 from typing import List
-from langchain.schema import Document
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 
 class ConversationSplitter:
@@ -28,11 +28,15 @@ class ConversationSplitter:
         Conversation 2
         Deal Size: ~€2k
         ...content...
+        
+        OR with (Refined) suffix:
+        Conversation 1 (Refined)
+        ...content...
         """
         documents = []
         
-        # Find all conversation headers (e.g., "Conversation 1", "Conversation 2:", "## Conversation 3")
-        conversation_pattern = r'(?:^|\n)(?:#{1,3}\s*)?Conversation\s+(\d+)\s*:?\s*\n'
+        # Find all conversation headers - matches "Conversation N" or "Conversation N (Refined)" etc.
+        conversation_pattern = r'(?:^|\n)(?:#{1,3}\s*)?Conversation\s+(\d+)(?:\s*\([^)]*\))?\s*\n'
         
         # Split the text by conversation headers
         parts = re.split(conversation_pattern, text, flags=re.IGNORECASE | re.MULTILINE)

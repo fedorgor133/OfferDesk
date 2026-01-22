@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import List
 import pandas as pd
-from langchain.schema import Document
+from langchain_core.documents import Document
 from langchain_community.document_loaders import PyPDFLoader
 from .conversation_splitter import ConversationSplitter
 
@@ -75,6 +75,27 @@ class DocumentLoader:
         if not data_dir.exists():
             return all_documents
         
+        # Load Text files (TXT, MD)
+        for text_file in list(data_dir.glob("*.txt")) + list(data_dir.glob("*.md")):
+            try:
+                with open(text_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                if split_conversations or 'all' in text_file.name.lower() or 'combined' in text_file.name.lower():
+                    docs = self.conversation_splitter.split_by_conversations(content, str(text_file))
+                    all_documents.extend(docs)
+                    print(f"✓ Loaded {text_file.name} - split into {len(docs)} conversation chunks")
+                else:
+                    # Load as single document
+                    doc = Document(
+                        page_content=content,
+                        metadata={"source": str(text_file), "type": "text"}
+                    )
+                    all_documents.append(doc)
+                    print(f"✓ Loaded {text_file.name}")
+            except Exception as e:
+                print(f"✗ Error loading text file {text_file.name}: {str(e)}")
+        
         # Load PDFs
         for pdf_file in data_dir.glob("*.pdf"):
             try:
@@ -82,11 +103,25 @@ class DocumentLoader:
                 should_split = split_conversations or 'all' in pdf_file.name.lower() or 'combined' in pdf_file.name.lower()
                 
                 if should_split:
-                    docs = self.load_pdf(str(pdf_file), split_conversations=True)
-                    all_documents.extend(docs)
-                    print(f"✓ Loaded {pdf_file.name} - split into {len(docs)} conversation chunks")
+                    try:
+                        docs = self.load_pdf(str(pdf_file), split_conversations=True)
+                        all_documents.extend(docs)
+                        print(f"✓ Loaded {pdf_file.name} - split into {len(docs)} conversation chunks")
+                    except Exception as pdf_error:
+                        print(f"⚠ PDF parsing failed for {pdf_file.name}, trying text extraction...")
+                        # Fallback: try to extract text differently
+                        from langchain_community.document_loaders import PDFMinerLoader
+                        try:
+                            loader = PDFMinerLoader(str(pdf_file))
+                            docs = loader.load()
+                            if docs:
+                                full_text = "\n\n".join([doc.page_content for doc in docs])
+                                split_docs = self.conversation_splitter.split_by_conversations(full_text, str(pdf_file))
+                                all_documents.extend(split_docs)
+                                print(f"✓ Loaded {pdf_file.name} using fallback method - {len(split_docs)} chunks")
+                        except:
+                            print(f"✗ Could not parse {pdf_file.name}")
                 else:
-                    # Extract conversation ID from filename (e.g., conversation_1.pdf -> 1)
                     conv_id = self._extract_conversation_id(pdf_file.name)
                     docs = self.load_pdf(str(pdf_file), conversation_id=conv_id)
                     all_documents.extend(docs)

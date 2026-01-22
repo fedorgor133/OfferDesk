@@ -4,8 +4,7 @@ Main RAG Agent implementation
 
 from typing import List, Optional
 from langchain_openai import ChatOpenAI
-from langchain.prompts import PromptTemplate
-from langchain.chains import RetrievalQA
+from langchain_core.prompts import PromptTemplate
 from .document_loader import DocumentLoader
 from .vector_store import VectorStoreManager
 from .conversation_router import ConversationRouter
@@ -15,21 +14,34 @@ class RAGAgent:
     #Retrieval Augmented Generation Agent
     
     def __init__(self, openai_api_key: str = None, db_path: str = "./data/db/chroma", 
-                 use_conversation_routing: bool = True):
-        self.llm = ChatOpenAI(
-            api_key=openai_api_key,
-            model="gpt-3.5-turbo",
-            temperature=0.7
-        )
+                 use_conversation_routing: bool = True, local_mode: bool = True):
+        """Initialize RAG Agent
+        
+        Args:
+            openai_api_key: OpenAI API key (not needed if local_mode=True)
+            db_path: Path to vector store database
+            use_conversation_routing: Enable conversation routing
+            local_mode: If True, disables all OpenAI API calls. Works only with provided documents.
+        """
+        self.local_mode = local_mode
+        
+        # Only initialize OpenAI if not in local_mode
+        self.llm = None
+        if not local_mode:
+            self.llm = ChatOpenAI(
+                api_key=openai_api_key,
+                model="gpt-3.5-turbo",
+                temperature=0.7
+            )
         
         self.vector_store_manager = VectorStoreManager(db_path=db_path)
         self.document_loader = DocumentLoader()
         self.qa_chain = None
         self.custom_prompt = self._create_prompt()
         
-        # Initialize conversation router
-        self.use_routing = use_conversation_routing
-        self.router = ConversationRouter(openai_api_key=openai_api_key) if use_conversation_routing else None
+        # Initialize conversation router (only if not in local_mode)
+        self.use_routing = use_conversation_routing and not local_mode
+        self.router = ConversationRouter(openai_api_key=openai_api_key) if self.use_routing else None
     
     def _create_prompt(self) -> PromptTemplate:
         """Create custom prompt for the agent"""
@@ -90,16 +102,6 @@ Answer: """
             print("⚠ Warning: Vector store is empty. Please load documents first.")
             return
         
-        # Create QA chain with vector store retriever
-        self.qa_chain = RetrievalQA.from_chain_type(
-            llm=self.llm,
-            chain_type="stuff",
-            retriever=self.vector_store_manager.vector_store.as_retriever(
-                search_kwargs={"k": 5}
-            ),
-            return_source_documents=True,
-            chain_type_kwargs={"prompt": self.custom_prompt}
-        )
         print("✓ RAG Agent initialized and ready to answer questions")
     
     def query(self, question: str, conversation_id: Optional[str] = None) -> dict:
@@ -144,12 +146,15 @@ Answer: """
         # Build context from retrieved documents
         context = "\n\n".join([doc.page_content for doc in relevant_docs])
         
-        # Create prompt with context
-        prompt_text = self.custom_prompt.format(context=context, question=question)
-        
-        # Get answer from LLM
-        response = self.llm.invoke(prompt_text)
-        answer = response.content
+        # In local mode, just return the most relevant document excerpt
+        if self.local_mode:
+            answer = f"Based on your documents:\n\n{context[:800]}"
+        else:
+            # Create prompt with context for LLM
+            prompt_text = self.custom_prompt.format(context=context, question=question)
+            # Get answer from LLM
+            response = self.llm.invoke(prompt_text)
+            answer = response.content
         
         # Format sources
         sources = [

@@ -4,7 +4,7 @@ Vector store management using ChromaDB
 
 import os
 from typing import List
-from langchain.schema import Document
+from langchain_core.documents import Document
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 
@@ -17,8 +17,10 @@ class VectorStoreManager:
         os.makedirs(db_path, exist_ok=True)
         
         # Use HuggingFace embeddings (free, no API key required)
+        # model_kwargs device is auto-detected, cache_folder stores models locally
         self.embeddings = HuggingFaceEmbeddings(
-            model_name="all-MiniLM-L6-v2"
+            model_name="all-MiniLM-L6-v2",
+            cache_folder="./data/embeddings_cache"
         )
         self.vector_store = None
     
