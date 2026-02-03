@@ -1,4 +1,4 @@
-"""Example: Using a single document with all conversations inside"""
+"""Example: Using JSON FAQ documentation"""
 
 import os
 from dotenv import load_dotenv
@@ -15,51 +15,24 @@ def main():
         return
     
     print("=" * 70)
-    print("RAG Agent - Single Document with All Conversations")
+    print("RAG Agent - JSON FAQ Documentation")
     print("=" * 70)
     
     print("""
-📄 How to format your document:
+📄 Documentation source:
 
-Your PDF/Word/Markdown document should have sections like this:
-
--------------------------------------------
-Conversation 1
-Deal Size: < €1k
-Stage: Discovery
-Type: New Business
-
-[All your content for conversation 1]
-...
-
-Conversation 2
-Deal Size: ~€2k
-Stage: Final, Closing
-Type: Competitive
-
-[All your content for conversation 2]
-...
-
-Conversation 3
-...
--------------------------------------------
-
-The agent will automatically:
-✓ Detect conversation sections
-✓ Tag each with conversation ID (1, 2, 3...)
-✓ Route questions to the right conversation
+Edit config/agent_prompt.json and update the single-line system_prompt.
+Use the separator '|||' only between Deal context entries.
     """)
     
-    # Initialize agent with routing
-    agent = RAGAgent(openai_api_key=openai_api_key, use_conversation_routing=True)
+    # Initialize agent
+    agent = RAGAgent(openai_api_key=openai_api_key, use_conversation_routing=False)
     
-    print("\n📚 Loading your document...")
+    print("\n📚 Loading documentation from JSON...")
     print("-" * 70)
-    print("Place your document as: data/uploads/all_conversations.pdf")
-    print("Or any name with 'all' or 'combined' in it\n")
     
-    # Load with conversation splitting enabled
-    agent.load_documents(split_conversations=True)
+    # Load FAQ sections from JSON
+    agent.load_documents()
     
     # Initialize
     print("\n🚀 Initializing Agent...")
@@ -111,16 +84,11 @@ The agent will automatically:
         
         print(f"💡 Answer:\n{result['answer']}\n")
         
-        if result.get('conversation_id'):
-            conv_info = agent.router.get_conversation_info(result['conversation_id'])
-            if conv_info:
-                print(f"📂 Matched Conversation {result['conversation_id']}: {conv_info['name']}")
-        
         if result.get('sources'):
             print(f"\n📚 Sources: {len(result['sources'])} sections found")
             for i, src in enumerate(result['sources'][:2], 1):
                 conv = src.get('conversation_id', 'N/A')
-                print(f"  {i}. Conversation {conv} - {src.get('chunk', 'N/A')}")
+                print(f"  {i}. Section {conv}")
         
         print("\n" + "-" * 70 + "\n")
 

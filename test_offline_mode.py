@@ -4,29 +4,25 @@ Test RAG Agent in LOCAL MODE - OFFLINE VERSION
 NO downloads, NO API calls, just keyword matching from your documents.
 """
 
-from src.processing.document_loader import DocumentLoader
-import re
+import json
+import os
 
 print("=" * 70)
 print("🚀 Testing RAG Agent - PURE OFFLINE MODE (NO DEPENDENCIES)")
 print("=" * 70)
 
-# Load documents directly
-print("\n📚 Loading your document...")
-loader = DocumentLoader()
-documents = loader.load_directory(split_conversations=True)
+# Load documentation directly from JSON
+print("\n📚 Loading documentation from JSON config...")
+prompt_path = os.path.join("config", "agent_prompt.json")
 
-print(f"✓ Loaded {len(documents)} conversation chunks")
+with open(prompt_path, "r", encoding="utf-8") as f:
+    data = json.load(f)
 
-# Organize by conversation
-conversations = {}
-for doc in documents:
-    conv_id = doc.metadata.get('conversation_id', 'unknown')
-    if conv_id not in conversations:
-        conversations[conv_id] = []
-    conversations[conv_id].append(doc.page_content)
+system_prompt = data.get("system_prompt", "")
+faq_text = system_prompt.split("FAQ:", 1)[1].strip() if "FAQ:" in system_prompt else system_prompt
+documents = [s.strip() for s in faq_text.split("|||") if s.strip()]
 
-print(f"✓ Found {len(conversations)} conversations\n")
+print(f"✓ Loaded {len(documents)} FAQ sections\n")
 
 # Test queries with simple keyword matching
 def search_offline(query, documents):
@@ -34,9 +30,7 @@ def search_offline(query, documents):
     query_words = set(query.lower().split())
     
     results = []
-    for doc in documents:
-        # Extract text content from Document object
-        doc_text = doc.page_content if hasattr(doc, 'page_content') else str(doc)
+    for doc_text in documents:
         doc_words = set(doc_text.lower().split())
         # Calculate overlap
         overlap = len(query_words & doc_words)

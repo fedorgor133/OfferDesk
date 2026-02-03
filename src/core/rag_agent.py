@@ -3,9 +3,11 @@ Main RAG Agent implementation
 """
 
 from typing import List, Optional
+import json
+import os
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import PromptTemplate
-from ..processing.document_loader import DocumentLoader
+from langchain_core.documents import Document
 from .vector_store import VectorStoreManager
 
 
@@ -13,7 +15,8 @@ class RAGAgent:
     #Retrieval Augmented Generation Agent
     
     def __init__(self, openai_api_key: str = None, db_path: str = "./data/db/chroma", 
-                 use_conversation_routing: bool = True, local_mode: bool = True):
+                 use_conversation_routing: bool = True, local_mode: bool = True,
+                 prompt_config_path: str = "./config/agent_prompt.json"):
         """Initialize RAG Agent
         
         Args:
@@ -34,8 +37,8 @@ class RAGAgent:
             )
         
         self.vector_store_manager = VectorStoreManager(db_path=db_path)
-        self.document_loader = DocumentLoader()
         self.qa_chain = None
+        self.prompt_config_path = prompt_config_path
         self.custom_prompt = self._create_prompt()
         
         # Conversation routing disabled (API mode not supported in this version)
@@ -44,14 +47,15 @@ class RAGAgent:
     
     def _create_prompt(self) -> PromptTemplate:
         """Create custom prompt for the agent"""
-        template = """You are a helpful AI assistant that answers questions based on provided documents and data.
+        system_prompt = self._load_system_prompt()
+        template = f"""{system_prompt}
 
-Use the following pieces of context to answer the question. If you don't know the answer, say so.
+Use the following pieces of context to answer the question. If the answer is not in the context, respond with "❌ Not covered in knowledge base.." and nothing else.
 
 Context:
-{context}
+{{context}}
 
-Question: {question}
+Question: {{question}}
 
 Answer: """
         
@@ -59,22 +63,67 @@ Answer: """
             template=template,
             input_variables=["context", "question"]
         )
+
+    def _load_system_prompt(self) -> str:
+        """Load system prompt from JSON config if available"""
+        default_prompt = "You are a helpful AI assistant that answers questions based on provided documents and data."
+        try:
+            if os.path.exists(self.prompt_config_path):
+                with open(self.prompt_config_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                prompt = data.get("system_prompt", "").strip()
+                return prompt if prompt else default_prompt
+        except Exception:
+            return default_prompt
+        return default_prompt
+
+    def _load_faq_documents(self) -> List[Document]:
+        """Load FAQ sections from system_prompt in JSON config"""
+        system_prompt = self._load_system_prompt()
+
+        if not system_prompt:
+            return []
+
+        # Use only FAQ portion if present
+        faq_text = system_prompt
+        if "FAQ:" in system_prompt:
+            faq_text = system_prompt.split("FAQ:", 1)[1].strip()
+
+        # Split into sections by separator (only between Deal contexts)
+        sections = [s.strip() for s in faq_text.split("|||") if s.strip()]
+        if not sections:
+            sections = [faq_text.strip()]
+
+        documents = []
+        for idx, section in enumerate(sections, 1):
+            documents.append(
+                Document(
+                    page_content=section,
+                    metadata={
+                        "source": self.prompt_config_path,
+                        "type": "faq",
+                        "conversation_id": idx
+                    }
+                )
+            )
+
+        return documents
     
     def load_documents(self, directory: str = None, split_conversations: bool = False) -> None:
-        """Load documents from directory
+        """Load documentation from JSON config
         
         Args:
-            directory: Directory to load from
-            split_conversations: If True, will split documents by "Conversation N" headers
+            directory: Deprecated (kept for backward compatibility)
+            split_conversations: Deprecated (kept for backward compatibility)
         """
-        print("\n📚 Loading documents...")
-        documents = self.document_loader.load_directory(directory, split_conversations=split_conversations)
+        print("\n📚 Loading documentation from JSON config...")
+        documents = self._load_faq_documents()
         
         if documents:
             self.vector_store_manager.add_documents(documents)
-            print(f"✓ Total documents loaded: {len(documents)}")
+            print(f"✓ Total FAQ sections loaded: {len(documents)}")
         else:
-            print("⚠ No documents found to load")
+            print("⚠ No FAQ content found in config/agent_prompt.json")
     
     def initialize(self) -> None:
         """Initialize the RAG chain"""
@@ -116,126 +165,42 @@ Answer: """
             print("🔍 Searching across all conversations...")
             relevant_docs = self.vector_store_manager.search(question, k=10)  # Get top 10 to rank them
         
-        # Re-rank to prefer "Deal Context" matches over "Outcome" matches
-        # This helps when the question matches the Deal Context more closely
-        if relevant_docs:
-            # Score documents based on keyword overlap in question
-            def score_relevance(doc, question_terms, question_lower):
-                content = doc.page_content.lower()
-                
-                score = 0
-                
-                # Extract Deal Context section
-                deal_context_section = ""
-                if "deal context:" in content:
-                    parts = content.split("outcome:")
-                    deal_context_section = parts[0].lower()
-                
-                # PRIMARY DEAL CONTEXT KEYWORDS (highest priority - must come from Deal Context line)
-                # These describe the actual deal being discussed
-                primary_keywords = ["3-year commitment", "4th year", "cpi", "linking renewal", 
-                                   "fixed percentage", "andorra telecom", "client requested clause"]
-                primary_score = 0
-                if deal_context_section:
-                    for keyword in primary_keywords:
-                        if keyword in deal_context_section:
-                            primary_score += 20  # VERY HIGH weight for primary context
-                
-                score += primary_score
-                
-                # HIGHEST WEIGHT: Check for exact phrase matches in Deal Context
-                # Look for multi-word phrases from the question
-                if deal_context_section and primary_score == 0:  # Only if primary keywords didn't match
-                    # Check for 2-3 word phrases
-                    words = question_lower.split()
-                    for i in range(len(words) - 2):
-                        phrase = " ".join(words[i:i+3])
-                        if phrase in deal_context_section:
-                            score += 10  # Very high weight for exact phrases
-                    
-                    # Check for secondary keywords with higher weight in Deal Context
-                    secondary_keywords = ["clause", "renewal", "commitment", "discount", "employee count",
-                                         "price stability", "pricing", "contract"]
-                    for keyword in secondary_keywords:
-                        if keyword in deal_context_section:
-                            score += 3
-                
-                # MEDIUM WEIGHT: Individual term matching in Deal Context (only if primary didn't match much)
-                if deal_context_section and primary_score < 20:
-                    for term in question_terms:
-                        if term in deal_context_section and len(term) > 4:
-                            score += 2
-                
-                # LOW WEIGHT: Outcome section matching (deprioritize outcomes when Deal Context matches)
-                if "outcome:" in content and primary_score == 0:  # Only if no primary match
-                    outcome_section = content.split("outcome:")[1]
-                    for term in question_terms:
-                        if term in outcome_section:
-                            score += 1
-                
-                # BONUS: If both Deal Context and Outcome match multiple terms
-                if deal_context_section and "outcome:" in content:
-                    outcome_section = content.split("outcome:")[1]
-                    matching_in_both = sum(1 for t in question_terms if t in deal_context_section and t in outcome_section)
-                    if matching_in_both > 0:
-                        score += matching_in_both * 3
-                
-                # SPECIAL BONUS: Rare keyword combinations (e.g., "4th year" + "linking renewal" + "cpi")
-                # These combinations are very specific and likely indicate correct match
-                if deal_context_section:
-                    rare_combos = [
-                        (["4th year", "linking renewal", "cpi"], 50),  # Highly specific to Conv 6
-                        (["4th year", "cpi"], 40),  # Still very specific
-                        (["linking renewal", "cpi"], 35),  # Specific phrase combo
-                    ]
-                    for keywords, bonus in rare_combos:
-                        if all(kw in deal_context_section for kw in keywords):
-                            score += bonus
-                
-                return score
-            
-            # Get important terms from question
-            question_terms = [t.lower() for t in question.split() if len(t) > 3]
-            question_lower = question.lower()
-            
-            # Score all documents
-            scored_docs = [(doc, score_relevance(doc, question_terms, question_lower)) for doc in relevant_docs]
-            
-            # Sort by score (descending) but keep original position as tiebreaker
-            scored_docs.sort(key=lambda x: (-x[1], relevant_docs.index(x[0])))
-            
-            # Take the top result
-            relevant_docs = [scored_docs[0][0]] if scored_docs else relevant_docs[:1]
-        
         if not relevant_docs:
             return {
-                "answer": "No relevant documents found for your query.",
+                "answer": "No relevant information found for your query.",
                 "sources": [],
                 "conversation_id": selected_conv_id
             }
         
-        # Build context from retrieved documents
-        context = "\n\n".join([doc.page_content for doc in relevant_docs])
+        # Get top-5 relevant documents for synthesis
+        if len(relevant_docs) > 5:
+            relevant_docs = relevant_docs[:5]
         
-        # In local mode, just return the most relevant document excerpt
+        # Extract rules from FAQ sections
+        extracted_rules = self._extract_rules(relevant_docs)
+        
         if self.local_mode:
-            answer = f"Based on your documents:\n\n{context[:800]}"
+            # In local mode, synthesize answer from extracted rules
+            answer = self._synthesize_answer_local(question, extracted_rules)
         else:
+            # Build context from retrieved documents for LLM
+            context = "\n\n".join([doc.page_content for doc in relevant_docs])
             # Create prompt with context for LLM
             prompt_text = self.custom_prompt.format(context=context, question=question)
             # Get answer from LLM
             response = self.llm.invoke(prompt_text)
             answer = response.content
+
+        explanation = f"Combined {len(relevant_docs)} relevant FAQ sections to synthesize this answer."
         
         # Format sources
         sources = [
             {
-                "content": doc.page_content[:200],
+                "section": idx + 1,
                 "source": doc.metadata.get("source", "Unknown"),
-                "page": doc.metadata.get("page", "N/A"),
                 "conversation_id": doc.metadata.get("conversation_id", "N/A")
             }
-            for doc in relevant_docs
+            for idx, doc in enumerate(relevant_docs)
         ]
         
         # Extract conversation_id from the first source if not already set
@@ -246,12 +211,90 @@ Answer: """
         
         return {
             "answer": answer,
+            "explanation": explanation,
             "sources": sources,
             "conversation_id": final_conv_id
         }
+    
+    def _extract_rules(self, documents: List[Document]) -> List[dict]:
+        """Extract standardized rules from FAQ documents"""
+        rules = []
+        
+        for doc in documents:
+            content = doc.page_content
+            rule_dict = {
+                "section": doc.metadata.get("conversation_id", "Unknown"),
+                "full_text": content
+            }
+            
+            # Extract the "Conclusion / Standardized Rule" section
+            if "Conclusion / Standardized Rule" in content or "Conclusion / Standardized Rules" in content:
+                # Split by "Conclusion"
+                parts = content.split("Conclusion / Standardized Rule", 1)
+                if len(parts) > 1:
+                    rule_text = parts[1].strip()
+                    # Remove leading colon if present
+                    rule_text = rule_text.lstrip(": ")
+                    rule_dict["rule"] = rule_text
+            
+            rules.append(rule_dict)
+        
+        return rules
+
+    def _synthesize_answer_local(self, question: str, rules: List[dict]) -> str:
+        """Synthesize an answer from multiple FAQ rules in local mode"""
+        if not rules:
+            return "No relevant rules found."
+        
+        # Start with intro
+        answer_parts = ["Based on the relevant guidelines:\n"]
+        
+        # Group and present rules
+        presented_rules = set()
+        
+        for rule in rules:
+            if "rule" in rule and rule["rule"] not in presented_rules:
+                rule_text = rule["rule"]
+                # Clean up the text - remove excessive length
+                if len(rule_text) > 500:
+                    # Extract key sentences
+                    sentences = rule_text.split(". ")
+                    key_sentences = sentences[:3]
+                    rule_text = ". ".join(key_sentences) + "."
+                
+                answer_parts.append(f"\n✓ {rule_text}")
+                presented_rules.add(rule["rule"])
+        
+        # Add context-specific guidance
+        answer_parts.append(self._generate_contextual_guidance(question, rules))
+        
+        return "".join(answer_parts)
+
+    def _generate_contextual_guidance(self, question: str, rules: List[dict]) -> str:
+        """Generate context-specific guidance based on the question and rules"""
+        guidance = "\n\nRecommendation:\n"
+        
+        # Check for multi-year vs single-year context
+        if "one-year" in question.lower() or "1-year" in question.lower():
+            guidance += "• Since this is a 1-year contract, note that discount/price caps are typically not allowed unless upgrading to multi-year.\n"
+        
+        if "three-year" in question.lower() or "3-year" in question.lower() or "multi-year" in question.lower():
+            guidance += "• Multi-year contracts (2+ years) unlock additional pricing flexibility and protection options.\n"
+        
+        if "price increase" in question.lower() or "price cap" in question.lower():
+            guidance += "• Price caps apply only to discounted net prices, not list prices.\n"
+            guidance += "• Standard maximum is 5-10% per year depending on contract structure.\n"
+        
+        if "discount" in question.lower():
+            guidance += "• Discount protections require matching customer commitment length.\n"
+        
+        guidance += "\n⚠️  Any deviation from standard policy requires management approval."
+        
+        return guidance
     
     def clear_database(self) -> None:
         """Clear all stored documents"""
         self.vector_store_manager.clear()
         self.qa_chain = None
         print("✓ Database cleared")
+

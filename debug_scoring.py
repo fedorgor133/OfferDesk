@@ -5,7 +5,7 @@ from src.core.rag_agent import RAGAgent
 
 # Initialize agent
 agent = RAGAgent(local_mode=True)
-agent.load_documents(split_conversations=True)
+agent.load_documents()
 agent.initialize()
 
 # Test query

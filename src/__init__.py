@@ -1,2 +1,4 @@
-"""RAG Agent Package"""
+"""
+OFFER-DESK Agent Package
+"""
 __version__ = "0.1.0"

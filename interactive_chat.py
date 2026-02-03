@@ -15,8 +15,8 @@ def main():
     # Initialize agent (offline mode - no API needed)
     agent = RAGAgent(local_mode=True)
     
-    # Load your document with auto conversation splitting
-    agent.load_documents(split_conversations=True)
+    # Load documentation from JSON config
+    agent.load_documents()
     
     print("🚀 Initializing agent...")
     agent.initialize()

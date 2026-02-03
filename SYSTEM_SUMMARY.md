@@ -93,11 +93,9 @@ OfferDesk/
 │   ├── core/
 │   │   ├── rag_agent.py          # Main RAG orchestrator + ranking algorithm
 │   │   └── vector_store.py       # ChromaDB management
-│   └── processing/
-│       ├── document_loader.py    # Load PDFs, CSVs, text
-│       └── conversation_splitter.py  # Parse conversation format
+├── config/
+│   └── agent_prompt.json         # JSON documentation + system prompt
 ├── data/
-│   ├── uploads/refined_conversations.txt  # 22 conversations
 │   ├── db/chroma/                # Persisted vector store
 │   └── embeddings_cache/         # HuggingFace model cache
 ├── interactive_chat.py           # User-facing chat interface
@@ -118,7 +116,7 @@ python interactive_chat.py
 from src.core.rag_agent import RAGAgent
 
 agent = RAGAgent(local_mode=True)
-agent.load_documents(split_conversations=True)
+agent.load_documents()
 agent.initialize()
 
 result = agent.query("Your question here")
@@ -191,14 +189,9 @@ python debug_scoring.py
 - `debug_scoring.py`: Analyze why certain conversations are selected
 
 ### To Add New Conversations
-1. Add to `data/uploads/refined_conversations.txt` in format:
-   ```
-   Conversation N
-   Deal Context: [description]
-   
-   Outcome: [answer/guidance]
-   ```
-2. Run `agent.clear_database()` then reload
+1. Add the new Deal context block inside `config/agent_prompt.json` under `system_prompt`
+2. Separate each Deal context with `|||` (no leading or trailing separator)
+3. Run `agent.clear_database()` then reload
 
 ### To Troubleshoot Wrong Answers
 1. Run `debug_scoring.py` to see ranking scores

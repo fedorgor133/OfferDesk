@@ -9,7 +9,7 @@ print("=" * 70)
 
 # Initialize agent once
 agent = RAGAgent(local_mode=True)
-agent.load_documents(split_conversations=True)
+agent.load_documents()
 agent.initialize()
 
 # Test query

@@ -5,8 +5,8 @@ A simple, offline-first RAG (Retrieval Augmented Generation) agent that answers 
 ## Features
 
 ✅ **Offline Mode** - No internet required, no API quota issues  
-✅ **Single Document** - Put all conversations in one file  
-✅ **Auto-Detection** - Automatically finds "Conversation N" sections  
+✅ **JSON Documentation** - Single source of truth in config/agent_prompt.json  
+✅ **FAQ Sectioning** - Uses `|||` separators between Deal contexts  
 ✅ **Keyword Search** - Simple, fast document retrieval  
 ✅ **Local Storage** - Vector database persists on your machine  
 
@@ -31,16 +31,12 @@ OfferDesk/
 │   ├── core/                    # Core RAG functionality
 │   │   ├── rag_agent.py         # Main RAG agent class
 │   │   └── vector_store.py      # Vector store management
-│   │
-│   └── processing/              # Document processing
-│       ├── document_loader.py   # Load PDF, CSV, TXT files
-│       └── conversation_splitter.py # Split docs into conversations
 │
 ├── config/
-│   └── .env                     # Your API keys (optional)
+│   ├── .env                     # Your API keys (optional)
+│   └── agent_prompt.json        # JSON documentation + system prompt
 │
 ├── data/
-│   ├── uploads/                 # Your document files
 │   ├── db/                      # Vector store database
 │   └── embeddings_cache/        # Cached embeddings
 │
@@ -67,7 +63,7 @@ OPENAI_API_KEY=sk-your-key-here
 
 ### Quick Start
 
-1. Place your PDF and CSV files in `data/uploads/`
+1. Update `config/agent_prompt.json` with your FAQ content
 2. Run the example script:
 
 ```bash
@@ -89,8 +85,8 @@ openai_api_key = os.getenv("OPENAI_API_KEY")
 # Initialize agent
 agent = RAGAgent(openai_api_key=openai_api_key)
 
-# Load documents
-agent.load_documents(directory="./data/uploads")
+# Load documentation from JSON
+agent.load_documents()
 
 # Initialize
 agent.initialize()
@@ -107,18 +103,18 @@ print(result['sources'])
 OfferDesk/
 ├── src/
 │   ├── __init__.py
-│   ├── rag_agent.py           # Main RAG agent class
-│   ├── document_loader.py     # PDF and CSV loading
-│   └── vector_store.py        # Vector store management
+│   ├── core/
+│   │   ├── rag_agent.py       # Main RAG agent class
+│   │   └── vector_store.py    # Vector store management
 ├── config/
 │   ├── .env.example           # Example environment variables
-│   └── .env                   # Your actual API keys (gitignored)
+│   ├── .env                   # Your actual API keys (gitignored)
+│   └── agent_prompt.json      # JSON documentation + system prompt
 ├── data/
-│   ├── uploads/               # Place your PDFs and CSVs here
 │   └── db/                    # ChromaDB vector store (auto-created)
 ├── requirements.txt           # Python dependencies
-├── example_usage.py          # Example script
-└── README.md                 # This file
+├── example_single_document.py # Example script
+└── README.md                  # This file
 ```
 
 ## Key Components
@@ -129,12 +125,6 @@ Main class that orchestrates the entire pipeline:
 - Vector store management
 - LLM interaction
 - Query processing
-
-### DocumentLoader
-Handles loading and parsing:
-- PDF files (page-by-page)
-- CSV files (row-by-row)
-- Creates Document objects with metadata
 
 ### VectorStoreManager
 Manages vector embeddings:
@@ -151,25 +141,24 @@ Edit `.env` to customize:
 
 ## Examples
 
-### Example 1: Analyzing Business Documents
+### Example 1: FAQ Queries
 
 ```python
 agent = RAGAgent(openai_api_key=key)
-agent.load_documents("./data/uploads")
+agent.load_documents()
 agent.initialize()
 
 result = agent.query("What are the key financial metrics from these reports?")
 ```
 
-### Example 2: CSV Data Analysis
+### Example 2: Pricing Guidance
 
 ```python
-# Place CSV files in data/uploads/
 agent = RAGAgent(openai_api_key=key)
 agent.load_documents()
 agent.initialize()
 
-result = agent.query("Summarize the sales data by region")
+result = agent.query("What is the standard cap for multi-year price increases?")
 ```
 
 ## Troubleshooting
@@ -178,7 +167,7 @@ result = agent.query("Summarize the sales data by region")
 Make sure to call `agent.initialize()` after loading documents.
 
 ### "No documents found"
-Verify that PDF and CSV files are in `data/uploads/` directory.
+Verify that `config/agent_prompt.json` exists and has a non-empty `system_prompt`.
 
 ### OpenAI API errors
 Check that your API key is correctly set in `config/.env`
@@ -186,14 +175,12 @@ Check that your API key is correctly set in `config/.env`
 ## Advanced Usage
 
 ### Custom Prompts
-You can customize the agent's behavior by modifying the prompt in `RAGAgent._create_prompt()`:
+You can customize the agent's behavior by editing the JSON prompt config at `config/agent_prompt.json`.
 
-```python
-agent.custom_prompt = PromptTemplate(
-    template="Your custom template here",
-    input_variables=["context", "question"]
-)
-```
+- Use a single-line value in the `system_prompt` field.
+- Use the separator `|||` **only between** individual “Deal context” entries (no leading or trailing separators).
+
+The agent loads this file in `RAGAgent` and uses it to build the prompt template.
 
 ### Different LLM Models
 Change the model in `RAGAgent.__init__()`:
@@ -208,10 +195,9 @@ self.llm = ChatOpenAI(
 
 ## Performance Tips
 
-- Keep documents focused on specific topics for better results
-- Use PDF files with good OCR for best accuracy
-- CSV files should have clear column headers
-- Smaller document chunks improve search accuracy
+- Keep each Deal context concise for better matches
+- Use `|||` separators only between Deal contexts
+- Smaller sections improve search accuracy
 
 ## License
 
