@@ -1,5 +1,6 @@
 # Environment variables
 config/.env
+config/agent_prompt.json
 
 # Virtual environment
 venv/
@@ -12,6 +13,14 @@ __pycache__/
 
 # Database
 data/db/
+data/embeddings_cache/
+
+# Documentation
+README.md
+SYSTEM_SUMMARY.md
+
+# macOS
+.DS_Store
 
 # IDE
 .vscode/
