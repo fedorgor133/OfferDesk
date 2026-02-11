@@ -16,7 +16,6 @@ data/db/
 data/embeddings_cache/
 
 # Documentation
-README.md
 SYSTEM_SUMMARY.md
 
 # macOS
